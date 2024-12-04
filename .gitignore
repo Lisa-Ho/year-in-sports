@@ -1,0 +1,10 @@
+# exclude jupyter checkpoints
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+cache/
+
+#data files
+data/*
