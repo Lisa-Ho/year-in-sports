@@ -8,3 +8,7 @@ cache/
 
 #data files
 data/*
+
+#images
+*.png
+*.svg
