@@ -6,7 +6,31 @@ from matplotlib.gridspec import GridSpec
 from pyfonts import load_font
 import time
 
-#load and cache fonts
+#---------------------------------------------------------------
+#Configs and functions -----------------------------------------
+st.set_page_config(
+    page_title="Strava unwrapped",
+    page_icon="weight_lifter",
+    #layout="wide",
+     )
+
+#session states
+if "init" not in st.session_state:
+    st.session_state["init"] = True
+    st.session_state["is_csv"] = None
+    st.session_state["upload_success"] = None
+    st.session_state["rerun_data_processing"] = True
+    st.session_state["FormSubmitter:user_inputs-Create visualisation"] = None
+    #st.session_state["run_visualisation"] = False
+
+def set_rerun_true():
+    st.session_state["rerun_data_processing"] = True
+
+def form_submit_callback():
+    st.session_state["rerun_data_processing"] = False
+    #st.session_state["run_visualisation"] = True
+
+#cache data and fonts
 @st.cache_data(persist=True, show_spinner=False)
 def load_fonts():
     font_b = load_font(
@@ -20,103 +44,10 @@ def load_fonts():
                     )
     return(font_b, font_r, font_m)
 
-@st.cache_data(persist=True, show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60*30)
 def load_data(uploaded_file):
     df = pd.read_csv(uploaded_file)
     return df
-
-#---------------------------------------------------------------
-#Main app--------------------------------------------------------
-st.set_page_config(
-    page_title="Strava unwrapped",
-    page_icon="weight_lifter",
-    #layout="wide",
-     )
-
-#session states
-if "init" not in st.session_state:
-    st.session_state["init"] = True
-    st.session_state["is_csv"] = None
-    st.session_state["upload_success"] = None
-    #st.session_state["rerun"] = True
-    st.session_state["FormSubmitter:user_inputs-Create visualisation"] = False
-
-st.title('My year in sports')
-st.markdown("\n")
-
-#upload data
-st.sidebar.subheader("Data upload")
-with st.sidebar:
-    uploaded_file = st.file_uploader("Upload your Strava csv file", 
-                                    accept_multiple_files=False)
-    
-    if uploaded_file is None:
-        st.session_state["is_csv"] = None
-        st.session_state["upload_success"] = None
-    
-    if uploaded_file is not None:
-        try:
-            df = load_data(uploaded_file)
-            st.session_state["is_csv"] = True    
-        except UnicodeDecodeError:
-            st.warning("Whoops, incorrect file format. Make sure to upload a `.csv` file to use this app")
-            st.session_state["is_csv"] = False
-            st.session_state["upload_success"]=False   
-
-    #run check if correct file
-    data_flag = False
-
-    if st.session_state["is_csv"]==True:
-        columns = df.columns
-        expected_columns = ['Activity ID', 'Activity Date', 'Activity Name', 
-                                'Activity Type', 'Distance.1', 'Moving Time']
-        missing_columns = []
-        for column in expected_columns:
-            if column not in columns:
-                data_flag=True
-                missing_columns.append(column)
-        if data_flag==True:
-            st.warning("""
-                    Whoops, your dataset doesn't look quite right ...\n
-                    It's missing the following columns: {}\n
-                    Check that the dataset matches the expected format                 
-                    """.format(str(missing_columns)))
-        if data_flag==False:
-            st.session_state["upload_success"] = True
-            with st.spinner('Uploading data ...'):
-
-                #reduce to relevant columns
-                df = df[expected_columns].rename(columns={"Distance.1":"Distance"})
-
-                #convert date column into datetime
-                df["Activity Date"] = pd.to_datetime(df["Activity Date"])
-
-                #load fonts---------------------------
-                font_b, font_r, font_m = load_fonts()
-
-                #display success message
-                st.success("Data upload successful")
-
-
-#user inputs  
-#submitted = None
-st.write()
-if st.session_state["upload_success"]==True:
-    with st.form(key='user_inputs'):
-        col1, col2 = st.columns(2)
-        with col1:
-            year_filter = st.selectbox(
-                "Year",
-                df["Activity Date"].dt.year.unique()
-               #("Email", "Home phone", "Mobile phone"),
-                )
-        with col2:
-            distance_unit = st.selectbox(
-                "Distance unit",
-                ("N/A","Kilometers","Miles"),
-                help="Select 'N/A' if you don't want to visualise distance"
-                )
-        submitted = st.form_submit_button('Create visualisation')
 
 
 #Chart functions---------------------------
@@ -139,12 +70,11 @@ def convert_time(sec):
         sec %= 60
         return "%02d:%02d" % (hour, min) 
 
-#final chart
-#def create_visualisation(circles_df, time_values, distance_values):
+  
+#process data for chart
+def process_data(df):
+#if st.session_state["FormSubmitter:user_inputs-Create visualisation"]==True:
 
-
-#create visualisation
-if st.session_state["FormSubmitter:user_inputs-Create visualisation"]==True:
     #prepare data for analysis----------------------------
     df_filtered = df[df["Activity Date"].dt.year == year_filter]
 
@@ -176,21 +106,233 @@ if st.session_state["FormSubmitter:user_inputs-Create visualisation"]==True:
             distance_values.append(df_filtered[(df_filtered["Activity Date"].dt.month == month)]["Distance"].sum()/1000)
         elif distance_unit=="Miles":
             distance_values.append(df_filtered[(df_filtered["Activity Date"].dt.month == month)]["Distance"].sum()/1600)
+        elif distance_unit=="Metres":
+            distance_values.append(df_filtered[(df_filtered["Activity Date"].dt.month == month)]["Distance"].sum())
+    #st.write(len(distance_values))
 
-    #configs for visual-------------------------------------
-    #create colour dict for activities
+    return df_filtered,top_three,circles_df,time_values,distance_values,months
+
+#create visual
+def create_visualisation(df_filtered,top_three,circles_df,time_values,distance_values,months):
+    #configs-------------------------------------
+    #colors
     act_color = ["#6DB4C8", "#FD7B5C", "#FBCA58", "#7E8384"]
     act_colormap = dict(zip(top_three + ["Other"], act_color))
+    colors = {"bg": "#FBF9F5", "text":"#2E3234", "bars":"#C6C9CA"}
 
-    #colors
-    colors = {"bg": "#FDFBF7", "text":"#2E3234", "bars":"#FBF9F5"}
-
-    #basesize of circles
+    #base size of circles
     markersize = 80
 
     #axis labels
     month_labels = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
+    #setup fig-------------------------------
+    fig = plt.figure(figsize=(10,12))
+    fig.set_facecolor(colors["bg"])
+    gs = GridSpec(5, 4, figure=fig)
+    ax1 = fig.add_subplot(gs[0:4, 0:3])
+    ax3 = fig.add_subplot(gs[3:4:, 3:])
+    if len(distance_values)!=0:
+        ax2 = fig.add_subplot(gs[2:3:, 3:])
+    plt.subplots_adjust(hspace=1, wspace=0.3)
+    for ax in fig.axes:
+        ax.set_facecolor(colors["bg"])
+
+    #plot data -----------
+    #circles
+    for row in range(len(circles_df)):
+        for i,label in enumerate(circles_df.loc[row]["Activity Type clean"]):
+            if i==0:
+                ax1.scatter(x=circles_df.loc[row]["Month"],
+                    y=circles_df.loc[row]["Day"],
+                    s=15,
+                    linewidth=0,
+                    color=act_colormap[label],
+                    clip_on=False)
+            else:
+                ax1.scatter(x=circles_df.loc[row]["Month"],
+                    y=circles_df.loc[row]["Day"],
+                    s=(i**1.7)*markersize,
+                    color="None",
+                    edgecolor=act_colormap[label],
+                    linewidth=1.3,
+                    clip_on=False)
+                
+    #bar charts
+    if len(distance_values)!=0:
+        ax2.bar(months, distance_values, color=colors["bars"], zorder=3)
+    ax3.bar(months, time_values, color=colors["bars"], zorder=3)
+                
+    #format axis------------------
+    #circles
+    ax1.set_xticks(np.arange(1,13,1))
+    ax1.set_yticks(np.arange(1,32,1))
+    ax1.tick_params(axis="both", length=0, labeltop=True, labelbottom=False,)
+    ax1.set_yticklabels(labels=ax1.get_yticks(), fontproperties=font_r, fontsize=10, color=colors["text"])
+    ax1.set_xticklabels(labels=month_labels, fontproperties=font_r, fontsize=10,color=colors["text"])
+    ax1.set_xlim(xmin=0.3,xmax=12.5)
+    ax1.set_ylim(ymin=0,ymax=31)
+    ax1.invert_yaxis()
+    for pos in ["top", "bottom", "left", "right"]:
+        ax1.spines[pos].set_visible(False)
+
+    #distance
+    if len(distance_values)!=0:
+        ax2.locator_params(axis='y', nbins=4)
+        ax2.set_yticks(ax2.get_yticks())
+        distance_unit_display = distance_unit.replace("Kilometers","km").replace("Miles","m").replace("Metres","m")
+        ax2.set_yticklabels([""]+["{}{}".format(i.astype(int),distance_unit_display) for i in ax2.get_yticks()][1:],fontproperties=font_r, fontsize=9,color=colors["text"])
+        ax2.text(0,ax2.get_yticks()[-1]+ax2.get_yticks()[1], "Distance", fontsize=12, ha="left", va="center", fontproperties=font_m, color=colors["text"], alpha=0.9)
+        ax2.set_xticks(np.arange(1,13,1))
+        ax2.set_xticklabels(labels=month_labels, fontproperties=font_r, fontsize=10,color=colors["text"])
+        ax2.tick_params(axis="both", length=0,labelleft=False, labelright=True,)
+        ax2.grid(visible="True", axis='y', zorder=1, color=colors["text"], alpha=0.3, linewidth=0.5)
+        for pos in ["top", "left", "right"]:
+            ax2.spines[pos].set_visible(False)
+
+    #total time
+    tick_steps = get_axis_ticks(max(time_values))
+    ax3.set_yticks(np.arange(0, max(time_values)+tick_steps, tick_steps))
+    ax3.set_yticklabels([""]+[convert_time(i) for i in ax3.get_yticks()][1:],fontproperties=font_r, fontsize=9,color=colors["text"])
+    ax3.text(0,max(time_values)+tick_steps, "Moving time", fontsize=12, ha="left", va="center", fontproperties=font_m, color=colors["text"], alpha=0.9)
+    ax3.set_xticks(np.arange(1,13,1))
+    ax3.set_xticklabels(labels=month_labels, fontproperties=font_r, fontsize=10,color=colors["text"])
+    ax3.tick_params(axis="both", length=0,labelleft=False, labelright=True,)
+    ax3.grid(visible="True", axis='y', zorder=1, color=colors["text"], alpha=0.3, linewidth=0.5)
+    for pos in ["top", "left", "right"]:
+        ax3.spines[pos].set_visible(False)
+
+    #legend--------------------------------
+    lg = fig.add_subplot(gs[0:1:, 3:])
+    kw = dict(marker='o', s=40, alpha=0.9, linewidths=0)
+    labels = df_filtered[["Activity Type clean", "Activity rank"]].drop_duplicates(
+        ).sort_values(by="Activity rank")["Activity Type clean"].to_list()
+    len_act = df_filtered["Activity rank"].max().astype(int)
+    lg.scatter(y=np.arange(0,len_act,1), 
+            x=[0]*len_act, color=[act_colormap[label] for label in labels], **kw, clip_on=False)
+    lg.set_xlim(xmin=0,xmax=1)
+    lg.set_ylim(ymin=-0.8,ymax=3)
+    lg.invert_yaxis()
+    for i, y_pos in enumerate(np.arange(0,len_act,1)):
+        lg.text(0.1, y_pos, labels[i], fontsize=12, ha="left", va="center", fontproperties=font_m, color=colors["text"], alpha=0.9)
+    lg.axis("off")
+
+    #header and footer------------------------
+    plt.figtext(0.5,0.99,'My year in sports'.upper(), 
+                ha="center",
+                fontsize = 45, 
+                color=colors["text"], 
+                fontproperties=font_b)
+    plt.figtext(0.5,1.06,'{}'.format(year_filter), ha="center",fontsize = 25, color=colors["text"], alpha=0.95, fontproperties=font_r)
+    plt.figtext(0.5,0.19,'Data: Strava | Design: Lisa Hornung',ha="center", fontsize = 7, color=colors["text"], alpha=0.7,fontproperties=font_r)
+
+    return fig
 
 
-st.write(st.session_state)
+#Main app--------------------------------------------------------
+
+st.title('My year in sports')
+st.markdown("\n")
+
+#upload data
+st.sidebar.subheader("Data upload")
+with st.sidebar:
+    uploaded_file = st.file_uploader("Upload your Strava csv file", 
+                                    accept_multiple_files=False,
+                                    on_change=set_rerun_true())
+    
+    if uploaded_file is None:
+        st.session_state["is_csv"] = None
+        st.session_state["upload_success"] = None
+        st.session_state["FormSubmitter:user_inputs-Create visualisation"] = False
+    
+    if (st.session_state["rerun_data_processing"]== True) & (uploaded_file is not None):
+        try:
+            df = load_data(uploaded_file)
+            st.session_state["is_csv"] = True    
+        except UnicodeDecodeError:
+            st.warning("Whoops, incorrect file format. Make sure to upload a `.csv` file to use this app")
+            st.session_state["is_csv"] = False
+            st.session_state["upload_success"]=False   
+
+    #run check if correct file
+    data_flag = False
+
+    if (st.session_state["is_csv"]==True) & (st.session_state["rerun_data_processing"]== True):
+        columns = df.columns
+        expected_columns = ['Activity ID', 'Activity Date', 'Activity Name', 
+                                'Activity Type', 'Distance.1', 'Moving Time']
+        missing_columns = []
+        for column in expected_columns:
+            if column not in columns:
+                data_flag=True
+                missing_columns.append(column)
+        if data_flag==True:
+            st.warning("""
+                    Whoops, your dataset doesn't look quite right ...\n
+                    It's missing the following columns: {}\n
+                    Check that the dataset matches the expected format                 
+                    """.format(str(missing_columns)))
+        if data_flag==False:
+            st.session_state["upload_success"] = True
+            with st.spinner('Uploading data ...'):
+
+                #reduce to relevant columns
+                df = df[expected_columns].rename(columns={"Distance.1":"Distance"})
+
+                #convert date column into datetime
+                df["Activity Date"] = pd.to_datetime(df["Activity Date"])
+
+                #load fonts---------------------------
+                font_b, font_r, font_m = load_fonts()
+
+                #display success message
+                st.success("Data upload successful")
+
+#user inputs  
+if st.session_state["upload_success"]==True:
+    with st.form(key='user_inputs'):
+        col1, col2 = st.columns(2)
+        with col1:
+            year_filter = st.selectbox(
+                "Year",
+                df["Activity Date"].dt.year.unique()
+                )
+        with col2:
+            distance_unit = st.selectbox(
+                "Distance unit",
+                ("N/A","Kilometers","Metres","Miles"),
+                help="Select 'N/A' if you don't want to visualise distance"
+                )
+        submitted = st.form_submit_button('Create visualisation',
+                                          on_click=form_submit_callback())
+
+st.markdown("\n")
+
+#run visualisation
+if st.session_state["FormSubmitter:user_inputs-Create visualisation"] is not None:
+    df_filtered,top_three,circles_df,time_values,distance_values,months = process_data(df)
+    fig = create_visualisation(df_filtered,top_three,circles_df,time_values,distance_values,months)
+    st.write(fig)
+
+
+#download image
+st.divider()
+st.write("")   
+plt.savefig("my-year-in-sports.png", bbox_inches="tight", pad_inches=0.8)
+with open("my-year-in-sports.png", "rb") as file:
+   btn = st.download_button(
+            label="Download image",
+            data=file,
+            file_name="my-year-in-sports-{}.png".format(year_filter),
+            mime="image/png"
+          )
+
+plt.savefig("my-year-in-sports.svg",bbox_inches="tight", pad_inches=0.8)
+with open("my-year-in-sports.svg", "rb") as file:
+   btn = st.download_button(
+            label="Download svg",
+            data=file,
+            file_name="my-year-in-sports-{}.svg".format(year_filter),
+            mime="svg"
+          )
