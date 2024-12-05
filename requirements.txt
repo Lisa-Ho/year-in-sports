@@ -1,0 +1,5 @@
+#requirements for streamlit app
+#Python=3.11
+matplotlib==3.9.3
+streamlit==1.40.2
+pyfonts==0.0.2
