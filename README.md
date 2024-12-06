@@ -1,6 +1,6 @@
 # My Year in Sports
 
-A streamlit app that allows you to created your own poster from all your Strava activities. 
+A streamlit app that allows you to created your own poster from all your Strava activities. Try it out [here](https://year-in-sports.streamlit.app/) 
 
 <img src="https://github.com/user-attachments/assets/8006efc9-d6db-486f-b57b-ef0d12df1fa5" width="600">
 
