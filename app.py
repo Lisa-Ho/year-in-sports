@@ -4,12 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from pyfonts import load_font
-import time
 
 #---------------------------------------------------------------
 #Configs and functions -----------------------------------------
 st.set_page_config(
-    page_title="Strava unwrapped",
+    page_title="Year in Sports",
     page_icon="weight_lifter",
     #layout="wide",
      )
@@ -20,8 +19,8 @@ if "init" not in st.session_state:
     st.session_state["is_csv"] = None
     st.session_state["upload_success"] = None
     st.session_state["rerun_data_processing"] = True
-    st.session_state["FormSubmitter:user_inputs-Create visualisation"] = None
-    #st.session_state["run_visualisation"] = False
+    st.session_state["FormSubmitter:user_inputs-Create visualisation"]=None
+#st.write(st.session_state)
 
 def set_rerun_true():
     st.session_state["rerun_data_processing"] = True
@@ -73,7 +72,6 @@ def convert_time(sec):
   
 #process data for chart
 def process_data(df):
-#if st.session_state["FormSubmitter:user_inputs-Create visualisation"]==True:
 
     #prepare data for analysis----------------------------
     df_filtered = df[df["Activity Date"].dt.year == year_filter]
@@ -86,7 +84,7 @@ def process_data(df):
                                             for activity in df_filtered['Activity Type']]
     df_filtered["Activity rank"] = df_filtered["Activity Type"].map(
         dict(zip(top_three, np.arange(0,len(top_three),1)))
-        ).fillna(len(top_three)+1)
+        ).fillna(len(top_three))
 
     #pre-aggregate data---------------------------
     #for daily circles
@@ -108,12 +106,15 @@ def process_data(df):
             distance_values.append(df_filtered[(df_filtered["Activity Date"].dt.month == month)]["Distance"].sum()/1600)
         elif distance_unit=="Metres":
             distance_values.append(df_filtered[(df_filtered["Activity Date"].dt.month == month)]["Distance"].sum())
-    #st.write(len(distance_values))
 
-    return df_filtered,top_three,circles_df,time_values,distance_values,months
+    #top three df
+    top_three_df = df_filtered[["Activity rank","Activity Type clean"]].value_counts().to_frame().reset_index().sort_values(by="Activity rank")
+
+    return df_filtered,top_three,top_three_df,circles_df,time_values,distance_values,months
 
 #create visual
-def create_visualisation(df_filtered,top_three,circles_df,time_values,distance_values,months):
+def create_visualisation(df_filtered,top_three,top_three_df,circles_df,time_values,distance_values,months):
+
     #configs-------------------------------------
     #colors
     act_color = ["#6DB4C8", "#FD7B5C", "#FBCA58", "#7E8384"]
@@ -203,18 +204,14 @@ def create_visualisation(df_filtered,top_three,circles_df,time_values,distance_v
         ax3.spines[pos].set_visible(False)
 
     #legend--------------------------------
-    lg = fig.add_subplot(gs[0:1:, 3:])
-    kw = dict(marker='o', s=40, alpha=0.9, linewidths=0)
-    labels = df_filtered[["Activity Type clean", "Activity rank"]].drop_duplicates(
-        ).sort_values(by="Activity rank")["Activity Type clean"].to_list()
-    len_act = df_filtered["Activity rank"].max().astype(int)
-    lg.scatter(y=np.arange(0,len_act,1), 
-            x=[0]*len_act, color=[act_colormap[label] for label in labels], **kw, clip_on=False)
-    lg.set_xlim(xmin=0,xmax=1)
-    lg.set_ylim(ymin=-0.8,ymax=3)
+    lg = fig.add_subplot(gs[0:2:, 3:])
+    labels = top_three_df["Activity Type clean"].to_list()
+    lg.barh(top_three_df["Activity rank"], top_three_df["count"], height=0.2, color=top_three_df["Activity Type clean"].map(act_colormap))
+    lg.set_ylim(ymin=-1.2,ymax=6)
     lg.invert_yaxis()
-    for i, y_pos in enumerate(np.arange(0,len_act,1)):
-        lg.text(0.1, y_pos, labels[i], fontsize=12, ha="left", va="center", fontproperties=font_m, color=colors["text"], alpha=0.9)
+    lg.text(0, lg.get_ylim()[1], "Activities", fontsize=12, ha="left", va="bottom", fontproperties=font_m, color=colors["text"], alpha=0.9)
+    for i in range(len(top_three_df)):
+        lg.text(0.1, i-0.35, labels[i]+", "+str( top_three_df["count"][i]), fontsize=10.5, ha="left", va="center", fontproperties=font_r, color=colors["text"], alpha=0.9)
     lg.axis("off")
 
     #header and footer------------------------
@@ -228,15 +225,25 @@ def create_visualisation(df_filtered,top_three,circles_df,time_values,distance_v
 
     return fig
 
-
 #Main app--------------------------------------------------------
-
 st.title('My year in sports')
-st.markdown("\n")
+st.markdown("#### Create a poster of all your Strava activities")
+st.write("")
 
 #upload data
 st.sidebar.subheader("Data upload")
+
 with st.sidebar:
+    st.write("")
+    with st.expander("What data do I need?", expanded=False):
+        st.markdown("""
+        You’ll need to download your activity data from Strava. Follow [this guide](https://support.strava.com/hc/en-us/articles/216918437-Exporting-your-Data-and-Bulk-Export) 
+        to get a data dump.
+        """)
+        st.markdown("""
+        The folder should contain `activities.csv` which we will use.
+        """)
+    st.write("") 
     uploaded_file = st.file_uploader("Upload your Strava csv file", 
                                     accept_multiple_files=False,
                                     on_change=set_rerun_true())
@@ -244,7 +251,7 @@ with st.sidebar:
     if uploaded_file is None:
         st.session_state["is_csv"] = None
         st.session_state["upload_success"] = None
-        st.session_state["FormSubmitter:user_inputs-Create visualisation"] = False
+        st.session_state["FormSubmitter:user_inputs-Create visualisation"] = None
     
     if (st.session_state["rerun_data_processing"]== True) & (uploaded_file is not None):
         try:
@@ -289,6 +296,16 @@ with st.sidebar:
                 #display success message
                 st.success("Data upload successful")
 
+st.sidebar.divider() 
+st.sidebar.subheader("About this app")
+st.sidebar.write("Made by Lisa Hornung with `streamlit`, `matplotlib` and `pyfonts`.")
+st.sidebar.markdown("""
+            Visit my [website](https://inside-numbers.com/) 
+            or get in touch on [Github](https://github.com/Lisa-Ho), 
+            [Mastodon](https://fosstodon.org/@LisaHornung), 
+            [Bluesky](https://bsky.app/profile/lisahornung.bsky.social).
+            """)
+
 #user inputs  
 if st.session_state["upload_success"]==True:
     with st.form(key='user_inputs'):
@@ -311,28 +328,29 @@ st.markdown("\n")
 
 #run visualisation
 if st.session_state["FormSubmitter:user_inputs-Create visualisation"] is not None:
-    df_filtered,top_three,circles_df,time_values,distance_values,months = process_data(df)
-    fig = create_visualisation(df_filtered,top_three,circles_df,time_values,distance_values,months)
+    df_filtered,top_three,top_three_df, circles_df,time_values,distance_values,months = process_data(df)
+    fig = create_visualisation(df_filtered,top_three,top_three_df,circles_df,time_values,distance_values,months)
     st.write(fig)
 
 
 #download image
-st.divider()
-st.write("")   
-plt.savefig("my-year-in-sports.png", bbox_inches="tight", pad_inches=0.8)
-with open("my-year-in-sports.png", "rb") as file:
-   btn = st.download_button(
-            label="Download image",
-            data=file,
-            file_name="my-year-in-sports-{}.png".format(year_filter),
-            mime="image/png"
-          )
+if st.session_state["FormSubmitter:user_inputs-Create visualisation"] is not None:
+    st.divider()
+    st.write("")   
+    plt.savefig("my-year-in-sports.png", bbox_inches="tight", pad_inches=0.8)
+    with open("my-year-in-sports.png", "rb") as file:
+        btn = st.download_button(
+                    label="Download image",
+                    data=file,
+                    file_name="my-year-in-sports-{}.png".format(year_filter),
+                    mime="image/png"
+                )
 
-plt.savefig("my-year-in-sports.svg",bbox_inches="tight", pad_inches=0.8)
-with open("my-year-in-sports.svg", "rb") as file:
-   btn = st.download_button(
-            label="Download svg",
-            data=file,
-            file_name="my-year-in-sports-{}.svg".format(year_filter),
-            mime="svg"
-          )
+    plt.savefig("my-year-in-sports.svg",bbox_inches="tight", pad_inches=0.8)
+    with open("my-year-in-sports.svg", "rb") as file:
+        btn = st.download_button(
+                    label="Download svg",
+                    data=file,
+                    file_name="my-year-in-sports-{}.svg".format(year_filter),
+                    mime="svg"
+                )
