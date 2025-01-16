@@ -8,7 +8,9 @@ cache/
 
 #data files
 data/*
+*.csv
 
 #images
 *.png
 *.svg
+!year_in_sports_example_output.png
