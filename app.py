@@ -354,3 +354,7 @@ if st.session_state["FormSubmitter:user_inputs-Create visualisation"] is not Non
                     file_name="my-year-in-sports-{}.svg".format(year_filter),
                     mime="svg"
                 )
+
+if st.session_state["upload_success"] != True:
+    st.image("https://github.com/Lisa-Ho/year-in-sports/blob/main/year_in_sports_example_output.png?raw=true",
+             width=400)
